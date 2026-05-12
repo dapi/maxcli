@@ -1,6 +1,7 @@
 .DS_Store
 .env
-.venv/
+.venv*/
+.maxcli-pymax-session/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -9,4 +10,3 @@ dist/
 .coverage
 .pytest_cache/
 .ruff_cache/
-

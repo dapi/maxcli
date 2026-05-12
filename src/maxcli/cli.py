@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import getpass
 import json
 import os
 import stat
@@ -34,7 +36,43 @@ def load_maxlib() -> Any:
             2,
         )
         raise exc
+    patch_maxlib_websocket_origin(maxlib)
     return maxlib
+
+
+def load_pymax() -> tuple[Any, Any]:
+    try:
+        from pymax import SocketMaxClient
+        from pymax.payloads import UserAgentPayload
+    except ImportError as exc:
+        die(
+            "Python package `maxapi-python` is not installed. "
+            "Install it with: python3 -m pip install maxapi-python==1.2.5",
+            2,
+        )
+        raise exc
+    return SocketMaxClient, UserAgentPayload
+
+
+def patch_maxlib_websocket_origin(maxlib: Any) -> None:
+    """Make maxlib compatible with MAX's current WebSocket handshake rules.
+
+    maxlib 0.1b1 connects without an Origin header and MAX now rejects that
+    handshake with HTTP 403. Keep the patch local so we can remove it when
+    maxlib catches up or when this CLI switches transport.
+    """
+    max_module = getattr(maxlib, "max", None)
+    if max_module is None or getattr(max_module, "_maxcli_origin_patch", False):
+        return
+
+    original_connect = max_module.connect
+
+    def connect_with_origin(uri: str, *args: Any, **kwargs: Any) -> Any:
+        kwargs.setdefault("origin", "https://web.max.ru")
+        return original_connect(uri, *args, **kwargs)
+
+    max_module.connect = connect_with_origin
+    max_module._maxcli_origin_patch = True
 
 
 def config_home() -> Path:
@@ -51,6 +89,10 @@ def config_home() -> Path:
 
 def config_path() -> Path:
     return config_home() / "config.json"
+
+
+def pymax_session_dir() -> Path:
+    return config_home() / "pymax-session"
 
 
 def empty_config() -> dict[str, Any]:
@@ -230,24 +272,68 @@ def resolve_chat_id(client: Any, args: argparse.Namespace) -> int:
     raise CliError("Pass one recipient selector: --chat-id, --user-id, or --phone")
 
 
-def command_auth(args: argparse.Namespace) -> int:
-    maxlib = load_maxlib()
-    phone = args.phone or input("Phone (+7...): ").strip()
-    client = maxlib.MaxClient()
+async def pymax_auth_token(phone: str) -> str:
+    SocketMaxClient, UserAgentPayload = load_pymax()
+    session_dir = pymax_session_dir()
+    session_dir.mkdir(parents=True, exist_ok=True)
+    client = SocketMaxClient(
+        phone=phone,
+        work_dir=str(session_dir),
+        headers=UserAgentPayload(device_type="DESKTOP", app_version="25.12.14"),
+        reconnect=False,
+    )
 
     try:
-        user = client.auth(phone)
-    finally:
-        websocket = getattr(client, "websocket", None)
-        if websocket:
-            try:
-                websocket.close()
-            except Exception:
-                pass
+        await client.connect(client.user_agent)
+        temp_token = await client.request_code(phone)
+        print("Auth code: ", end="", flush=True)
+        code = await asyncio.to_thread(lambda: sys.stdin.readline().strip())
+        if len(code) != 6 or not code.isdigit():
+            raise CliError("Auth code must contain 6 digits")
 
-    token = getattr(client, "auth_token", None)
-    if not token:
-        raise CliError("Authentication finished without a token")
+        login_resp = await client._send_code(code, temp_token)
+        login_attrs = login_resp.get("tokenAttrs", {}).get("LOGIN", {})
+        password_challenge = login_resp.get("passwordChallenge")
+
+        if password_challenge and not login_attrs:
+            track_id = password_challenge.get("trackId")
+            if not track_id:
+                raise CliError("MAX requested 2FA but did not return a track id")
+            hint = password_challenge.get("hint") or "No hint provided"
+            while True:
+                password = await asyncio.to_thread(
+                    lambda: getpass.getpass(f"2FA password (hint: {hint}): ")
+                )
+                if not password:
+                    print("2FA password is empty, try again.", file=sys.stderr)
+                    continue
+                token_attrs = await client._check_password(password, track_id)
+                if not token_attrs:
+                    print("2FA password is incorrect, try again.", file=sys.stderr)
+                    continue
+                login_attrs = token_attrs.get("LOGIN", {})
+                break
+
+        token = login_attrs.get("token")
+        if not token:
+            raise CliError("Authentication finished without a token")
+
+        database = getattr(client, "_database", None)
+        device_id = getattr(client, "_device_id", None)
+        if database is not None and device_id is not None:
+            database.update_auth_token(device_id, token)
+        return token
+    finally:
+        cleanup = getattr(client, "_cleanup_client", None)
+        if cleanup:
+            await cleanup()
+        else:
+            await client.close()
+
+
+def command_auth(args: argparse.Namespace) -> int:
+    phone = args.phone or input("Phone (+7...): ").strip()
+    token = asyncio.run(pymax_auth_token(phone))
 
     profile = get_profile(args)
     profile.update(
@@ -255,13 +341,20 @@ def command_auth(args: argparse.Namespace) -> int:
             "phone": phone,
             "token": token,
             "updated_at": now_iso(),
-            "user": user_to_dict(user),
+            "auth_backend": "pymax.SocketMaxClient",
         }
     )
     save_profile(args, profile)
 
     print(f"Saved token for profile `{get_profile_name(args)}`: {config_path()}")
-    print_user(user, args.json)
+    if args.json:
+        print_json(
+            {
+                "profile": get_profile_name(args),
+                "phone": phone,
+                "config_path": str(config_path()),
+            }
+        )
     return 0
 
 
@@ -493,4 +586,3 @@ def main(argv: list[str] | None = None) -> int:
         die(str(exc))
     except BrokenPipeError:
         return 1
-

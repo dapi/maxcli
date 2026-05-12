@@ -24,7 +24,8 @@ PYTHONPATH=src python3 -m maxcli --help
 maxcli auth +79990000000
 ```
 
-The command asks for the code sent by MAX and saves the resulting token to:
+The command asks for the code sent by MAX. If 2FA is enabled, it also asks for
+the 2FA password using a hidden terminal prompt. It saves the resulting token to:
 
 ```text
 ~/.config/maxcli/config.json
@@ -52,4 +53,3 @@ Every command that returns data supports `--json`.
 - `maxlib` can resolve direct chats by phone or user id.
 - Chat history requires a known chat id or a user that can be resolved to a direct chat.
 - MAX internal APIs are unstable. Treat this as an agent-facing automation probe, not a production integration.
-
