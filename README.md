@@ -37,6 +37,8 @@ The config file is created with `0600` permissions. You can override the token w
 
 ```bash
 maxcli me
+maxcli chats list --limit 50
+maxcli chats search "Papado AI company OS"
 maxcli resolve --phone +79990000000
 maxcli send --phone +79990000000 "hello"
 maxcli send --chat-id 123456789 --stdin < message.txt

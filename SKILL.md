@@ -57,6 +57,8 @@ are stored outside the repo in `~/.config/maxcli/config.json`.
 
 ```bash
 maxcli me --json
+maxcli chats list --limit 50 --json
+maxcli chats search "project name" --limit 20 --json
 maxcli token-path
 maxcli token-clear
 maxcli token-clear --remote
@@ -71,6 +73,17 @@ maxcli resolve --chat-id <chat_id> --json
 ```
 
 Use `chat_id` from `resolve` for later `send`, `history`, or `listen` commands.
+
+### Find Named Chats
+
+```bash
+maxcli chats search "Papado AI company OS" --json
+maxcli chats search "Papado" --limit 20 --fetch-pages 10 --json
+maxcli chats list --limit 50 --json
+```
+
+Use `chats search` before guessing chat ids. Increase `--fetch-pages` when the
+chat is older than the initial sync window.
 
 ### Send Text
 
@@ -103,8 +116,7 @@ Stop listening with Ctrl+C.
 
 - `maxcli` currently supports direct chat resolution by phone, user id, or known
   chat id.
-- Named chat search/listing may require adding a command to `maxcli` first. Do
-  not guess chat ids.
+- Named chat search/listing is available through `maxcli chats search` and
+  `maxcli chats list`.
 - Attachments, reactions, editing, deleting, groups, and full-text search are
   not stable public surfaces yet unless the CLI exposes them.
-
