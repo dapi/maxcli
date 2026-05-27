@@ -41,14 +41,49 @@ maxcli chats list --limit 50
 maxcli chats search "Papado AI company OS"
 maxcli resolve --phone +79990000000
 maxcli send --phone +79990000000 "hello"
+maxcli send --chat-id 123456789 --file ./report.pdf "See attached"
+maxcli send --chat-id 123456789 --file ./a.txt --file ./b.txt
 maxcli send --chat-id 123456789 --stdin < message.txt
 maxcli history --phone +79990000000 --limit 20
+maxcli download --chat-id 123456789 --message-id 987654321 --attach-index 0 --output ./downloads/
 maxcli listen
 maxcli token-path
 maxcli token-clear
 ```
 
 Every command that returns data supports `--json`.
+
+## Attachments
+
+Send one or more local files with `--file`. Text is optional when at least one
+file is attached:
+
+```bash
+maxcli send --chat-id 123456789 --file ./report.pdf "See attached"
+maxcli send --chat-id 123456789 --file ./image.png
+maxcli send --chat-id 123456789 --file ./a.txt --file ./b.txt
+```
+
+Images with common image extensions are uploaded as photos, common video
+extensions are uploaded as videos, and other paths are uploaded as generic
+files.
+
+Use JSON history to inspect attachment indexes and metadata:
+
+```bash
+maxcli history --chat-id 123456789 --limit 20 --json
+```
+
+Download an attachment by message id and attachment index:
+
+```bash
+maxcli download --chat-id 123456789 --message-id 987654321 --attach-index 0 --output ./downloads/
+maxcli download --chat-id 123456789 --message-id 987654321 --attach-index 0 --output ./file.pdf --force
+```
+
+Downloads are supported for files and videos through `maxapi-python` lookup
+helpers, plus attachments that already expose a direct URL. Photo download
+depends on the URL metadata returned by MAX for that message.
 
 ## Notes
 

@@ -90,6 +90,9 @@ chat is older than the initial sync window.
 ```bash
 maxcli send --chat-id <chat_id> "Hello" --json
 maxcli send --phone +79990000000 "Hello" --json
+maxcli send --chat-id <chat_id> --file ./report.pdf "See attached" --json
+maxcli send --chat-id <chat_id> --file ./image.png --json
+maxcli send --chat-id <chat_id> --file ./a.txt --file ./b.txt --json
 maxcli send --chat-id <chat_id> --stdin --json < message.txt
 maxcli send --chat-id <chat_id> --reply-id <message_id> "Reply text" --json
 maxcli send --chat-id <chat_id> --silent "Quiet text" --json
@@ -102,6 +105,18 @@ maxcli history --chat-id <chat_id> --limit 20 --json
 maxcli history --phone +79990000000 --limit 20 --json
 maxcli history --user-id <user_id> --limit 20 --json
 ```
+
+Use the `attaches[].index` value from JSON output for downloads.
+
+### Download Attachments
+
+```bash
+maxcli download --chat-id <chat_id> --message-id <message_id> --attach-index 0 --output ./downloads/ --json
+maxcli download --chat-id <chat_id> --message-id <message_id> --attach-index 0 --output ./file.pdf --force --json
+```
+
+The command searches recent history for the message id. Increase `--limit` if
+the message is older than the default lookup window.
 
 ### Listen
 
@@ -118,5 +133,7 @@ Stop listening with Ctrl+C.
   chat id.
 - Named chat search/listing is available through `maxcli chats search` and
   `maxcli chats list`.
-- Attachments, reactions, editing, deleting, groups, and full-text search are
-  not stable public surfaces yet unless the CLI exposes them.
+- File attachments are supported for send, JSON metadata inspection, and
+  downloads where MAX exposes a retrievable URL. Reactions, editing, deleting,
+  groups, and full-text search are not stable public surfaces yet unless the
+  CLI exposes them.

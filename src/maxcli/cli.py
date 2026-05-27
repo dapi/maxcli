@@ -11,6 +11,8 @@ import os
 import stat
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,6 +20,8 @@ from typing import Any
 
 APP_NAME = "maxcli"
 DEFAULT_PROFILE = "default"
+PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".matroska"}
 
 
 class CliError(Exception):
@@ -55,6 +59,19 @@ def load_pymax() -> tuple[Any, Any]:
         )
         raise exc
     return SocketMaxClient, UserAgentPayload
+
+
+def load_pymax_files() -> tuple[Any, Any, Any]:
+    try:
+        from pymax.files import File, Photo, Video
+    except ImportError as exc:
+        die(
+            "Python package `maxapi-python` is not installed. "
+            "Install it with: python3 -m pip install maxapi-python==1.2.5",
+            2,
+        )
+        raise exc
+    return File, Photo, Video
 
 
 def patch_maxlib_websocket_origin(maxlib: Any) -> None:
@@ -204,6 +221,45 @@ def user_to_dict(user: Any) -> dict[str, Any]:
     }
 
 
+def value_from(source: Any, *names: str) -> Any:
+    for name in names:
+        if isinstance(source, dict) and name in source:
+            return source[name]
+        if not isinstance(source, dict) and hasattr(source, name):
+            return getattr(source, name)
+    return None
+
+
+def attachment_to_dict(attach: Any, index: int) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "index": index,
+        "type": enum_value(value_from(attach, "type", "_type")),
+        "class": attach.__class__.__name__,
+    }
+    fields = {
+        "file_id": ("file_id", "fileId"),
+        "photo_id": ("photo_id", "photoId"),
+        "video_id": ("video_id", "videoId"),
+        "audio_id": ("audio_id", "audioId"),
+        "contact_id": ("contact_id", "contactId"),
+        "name": ("name", "file_name", "fileName"),
+        "size": ("size",),
+        "token": ("token",),
+        "photo_token": ("photo_token", "photoToken"),
+        "url": ("url",),
+        "base_url": ("base_url", "baseUrl"),
+        "thumbnail": ("thumbnail",),
+        "width": ("width",),
+        "height": ("height",),
+        "duration": ("duration",),
+    }
+    for key, names in fields.items():
+        value = value_from(attach, *names)
+        if value not in (None, ""):
+            data[key] = enum_value(value)
+    return data
+
+
 def message_to_dict(message: Any) -> dict[str, Any]:
     user = getattr(message, "user", None)
     sender_name = None
@@ -221,11 +277,8 @@ def message_to_dict(message: Any) -> dict[str, Any]:
         "type": enum_value(getattr(message, "type", None)),
         "status": enum_value(getattr(message, "status", None)),
         "attaches": [
-            {
-                "type": enum_value(getattr(attach, "type", None)),
-                "class": attach.__class__.__name__,
-            }
-            for attach in (getattr(message, "attaches", None) or [])
+            attachment_to_dict(attach, index)
+            for index, attach in enumerate(getattr(message, "attaches", None) or [])
         ],
     }
 
@@ -621,10 +674,12 @@ async def pymax_send_message(args: argparse.Namespace, text: str) -> Any:
     try:
         chat_id = await resolve_pymax_recipient_chat_id(client, args)
         reply_to = int(args.reply_id) if args.reply_id else None
+        attachments = build_pymax_attachments(args.file or [])
         return await client.send_message(
             text=text,
             chat_id=chat_id,
             notify=not args.silent,
+            attachments=attachments or None,
             reply_to=reply_to,
         )
     finally:
@@ -641,6 +696,167 @@ async def pymax_history(args: argparse.Namespace) -> list[Any]:
             backward=int(args.limit or 20),
         )
         return list(messages or [])
+    finally:
+        await close_pymax_client(client)
+
+
+def validate_file_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.exists():
+        raise CliError(f"File does not exist: {path}")
+    if not path.is_file():
+        raise CliError(f"Not a regular file: {path}")
+    try:
+        with path.open("rb"):
+            pass
+    except OSError as exc:
+        raise CliError(f"Cannot read file {path}: {exc}") from exc
+    return path
+
+
+def build_pymax_attachments(paths: list[str]) -> list[Any]:
+    if not paths:
+        return []
+    File, Photo, Video = load_pymax_files()
+    attachments = []
+    for value in paths:
+        path = validate_file_path(value)
+        suffix = path.suffix.lower()
+        if suffix in PHOTO_EXTENSIONS:
+            attachments.append(Photo(path=str(path)))
+        elif suffix in VIDEO_EXTENSIONS:
+            attachments.append(Video(path=str(path)))
+        else:
+            attachments.append(File(path=str(path)))
+    return attachments
+
+
+def sanitize_filename(value: str | None, fallback: str) -> str:
+    name = Path(value or fallback).name
+    cleaned = "".join(char if char not in '/\\\0' else "_" for char in name).strip()
+    return cleaned or fallback
+
+
+def output_path_for_attachment(output: str, attach: Any, message_id: str, index: int) -> Path:
+    path = Path(output).expanduser()
+    if path.exists() and path.is_dir():
+        fallback = f"message-{message_id}-attach-{index}"
+        return path / sanitize_filename(value_from(attach, "name", "file_name"), fallback)
+    if str(output).endswith(os.sep):
+        path.mkdir(parents=True, exist_ok=True)
+        fallback = f"message-{message_id}-attach-{index}"
+        return path / sanitize_filename(value_from(attach, "name", "file_name"), fallback)
+    return path
+
+
+def download_url_to_path(url: str, path: Path, force: bool) -> int:
+    if path.exists() and not force:
+        raise CliError(f"Output file already exists: {path}. Pass --force to overwrite.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response:
+            total = 0
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            with tmp.open("wb") as fh:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    total += len(chunk)
+            tmp.replace(path)
+            return total
+    except (OSError, urllib.error.URLError) as exc:
+        raise CliError(f"Download failed: {exc}") from exc
+
+
+def message_id_equals(message: Any, message_id: str) -> bool:
+    return str(getattr(message, "id", "")) == str(message_id)
+
+
+def parse_message_id(value: str) -> int:
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise CliError(f"Message id must be numeric: {value}") from exc
+
+
+async def pymax_download_attachment(args: argparse.Namespace) -> dict[str, Any]:
+    client = await sync_pymax_client(args)
+    try:
+        chat_id = await resolve_pymax_recipient_chat_id(client, args)
+        messages = await client.fetch_history(
+            chat_id=chat_id,
+            forward=0,
+            backward=int(args.limit or 50),
+        )
+        message = next(
+            (item for item in (messages or []) if message_id_equals(item, args.message_id)),
+            None,
+        )
+        if message is None:
+            raise CliError(
+                f"Message {args.message_id} not found in last {args.limit} messages"
+            )
+
+        attaches = list(getattr(message, "attaches", None) or [])
+        if not attaches:
+            raise CliError(f"Message {args.message_id} has no attachments")
+        if args.attach_index < 0 or args.attach_index >= len(attaches):
+            raise CliError(
+                f"Invalid attachment index {args.attach_index}; "
+                f"message has {len(attaches)} attachment(s)"
+            )
+
+        attach = attaches[args.attach_index]
+        url = value_from(attach, "url")
+        file_id = value_from(attach, "file_id", "fileId")
+        video_id = value_from(attach, "video_id", "videoId")
+        base_url = value_from(attach, "base_url", "baseUrl")
+
+        if file_id is not None:
+            request = await client.get_file_by_id(
+                chat_id=chat_id,
+                message_id=parse_message_id(args.message_id),
+                file_id=int(file_id),
+            )
+            url = getattr(request, "url", None)
+        elif video_id is not None:
+            request = await client.get_video_by_id(
+                chat_id=chat_id,
+                message_id=parse_message_id(args.message_id),
+                video_id=int(video_id),
+            )
+            url = getattr(request, "url", None)
+        elif not url and isinstance(base_url, str) and base_url.startswith("http"):
+            url = base_url
+
+        if not url:
+            raise CliError(
+                "Attachment is not downloadable with the current SDK metadata. "
+                "Supported types: file, video, audio/url, and direct-url photo metadata."
+            )
+
+        output = output_path_for_attachment(
+            args.output,
+            attach,
+            str(args.message_id),
+            int(args.attach_index),
+        )
+        bytes_written = await asyncio.to_thread(
+            download_url_to_path,
+            str(url),
+            output,
+            bool(args.force),
+        )
+        return {
+            "chat_id": chat_id,
+            "message_id": args.message_id,
+            "attach_index": args.attach_index,
+            "path": str(output),
+            "bytes": bytes_written,
+            "attachment": attachment_to_dict(attach, args.attach_index),
+        }
     finally:
         await close_pymax_client(client)
 
@@ -708,6 +924,8 @@ def read_message_text(args: argparse.Namespace) -> str:
         return sys.stdin.read()
     if args.text:
         return " ".join(args.text)
+    if getattr(args, "file", None):
+        return ""
     if not sys.stdin.isatty():
         return sys.stdin.read()
     raise CliError("Pass message text or use --stdin")
@@ -715,8 +933,10 @@ def read_message_text(args: argparse.Namespace) -> str:
 
 def command_send(args: argparse.Namespace) -> int:
     text = read_message_text(args)
-    if not text.strip():
-        raise CliError("Message text is empty")
+    if not text.strip() and not args.file:
+        raise CliError("Message text is empty. Pass message text, --stdin, or --file.")
+    for path in args.file or []:
+        validate_file_path(path)
 
     message = asyncio.run(pymax_send_message(args, text))
     print_message(message, args.json)
@@ -734,6 +954,15 @@ def command_history(args: argparse.Namespace) -> int:
     else:
         for message in messages:
             print_message(message, False)
+    return 0
+
+
+def command_download(args: argparse.Namespace) -> int:
+    data = asyncio.run(pymax_download_attachment(args))
+    if args.json:
+        print_json(data)
+    else:
+        print(data["path"])
     return 0
 
 
@@ -868,12 +1097,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_recipient(resolve)
     resolve.set_defaults(func=command_resolve)
 
-    send = sub.add_parser("send", help="Send a text message")
+    send = sub.add_parser("send", help="Send a text message or file attachment")
     add_common(send)
     add_json(send)
     add_recipient(send)
     send.add_argument("text", nargs="*", help="Message text")
     send.add_argument("--stdin", action="store_true", help="Read message text from stdin")
+    send.add_argument(
+        "--file",
+        action="append",
+        default=[],
+        help="Attach a local file. Can be passed multiple times.",
+    )
     send.add_argument("--reply-id", help="Message id to reply to")
     send.add_argument("--silent", action="store_true", help="Do not notify recipient")
     send.set_defaults(func=command_send)
@@ -885,6 +1120,35 @@ def build_parser() -> argparse.ArgumentParser:
     history.add_argument("--limit", type=int, default=20, help="Number of messages to show")
     history.add_argument("--reverse", action="store_true", help="Reverse message order")
     history.set_defaults(func=command_history)
+
+    download = sub.add_parser("download", help="Download a message attachment")
+    add_common(download)
+    add_json(download)
+    add_recipient(download)
+    download.add_argument("--message-id", required=True, help="Message id to inspect")
+    download.add_argument(
+        "--attach-index",
+        type=int,
+        default=0,
+        help="Attachment index from history --json output",
+    )
+    download.add_argument(
+        "--output",
+        required=True,
+        help="Output file path or existing directory",
+    )
+    download.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Number of recent messages to search for the message id",
+    )
+    download.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it already exists",
+    )
+    download.set_defaults(func=command_download)
 
     listen = sub.add_parser("listen", help="Print incoming messages")
     add_common(listen)
