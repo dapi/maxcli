@@ -6,16 +6,19 @@ It is based on [`maxlib`](https://pypi.org/project/maxlib/), which talks to MAX 
 
 ## Install
 
-From this repository:
+Install or update the latest release with `uv`:
 
 ```bash
-python3 -m pip install -e .
+uv tool install --force "git+https://github.com/dapi/maxcli.git@v0.3.0"
 ```
 
-Or run without installing:
+Use `pipx install --force "git+https://github.com/dapi/maxcli.git@v0.3.0"`
+when `uv` is unavailable.
+
+Verify the installed version:
 
 ```bash
-PYTHONPATH=src python3 -m maxcli --help
+maxcli --version
 ```
 
 ## Auth
@@ -36,6 +39,7 @@ The config file is created with `0600` permissions. You can override the token w
 ## Commands
 
 ```bash
+maxcli --version
 maxcli me
 maxcli chats list --limit 50
 maxcli chats search "Papado AI company OS"
@@ -52,6 +56,19 @@ maxcli token-clear
 ```
 
 Every command that returns data supports `--json`.
+
+## Versioning and Releases
+
+Releases follow [Semantic Versioning](https://semver.org/). The package version
+has a single source of truth in `maxcli.__version__`; build metadata and
+`maxcli --version` are derived from it. Release tags use the matching `vX.Y.Z`
+form.
+
+For local development, install the checkout in editable mode:
+
+```bash
+python3 -m pip install -e .
+```
 
 ## Attachments
 

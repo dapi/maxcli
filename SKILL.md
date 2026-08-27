@@ -23,11 +23,11 @@ npx skills add dapi/maxcli --skill maxcli --agent '*' -g -y
 Install or update the CLI from GitHub with `uv`:
 
 ```bash
-uv tool install --force "git+https://github.com/dapi/maxcli.git"
+uv tool install --force "git+https://github.com/dapi/maxcli.git@v0.3.0"
 ```
 
-Use `pipx install --force "git+https://github.com/dapi/maxcli.git"` when `uv`
-is unavailable.
+Use `pipx install --force "git+https://github.com/dapi/maxcli.git@v0.3.0"`
+when `uv` is unavailable.
 
 Authenticate once:
 

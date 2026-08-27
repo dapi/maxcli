@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import __version__
+
 
 APP_NAME = "maxcli"
 DEFAULT_PROFILE = "default"
@@ -1047,6 +1049,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="maxcli",
         description="Unofficial MAX user-account CLI.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     add_common(parser)
     sub = parser.add_subparsers(dest="command", required=True)
