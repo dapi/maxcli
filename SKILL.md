@@ -17,15 +17,17 @@ CLI skill for personal MAX Messenger automation through `maxcli`.
 Install this skill from GitHub:
 
 ```bash
-npx skills add dapi/max-cli --skill maxcli --agent '*' -g -y
+npx skills add dapi/maxcli --skill maxcli --agent '*' -g -y
 ```
 
-Install CLI from the repository:
+Install or update the CLI from GitHub with `uv`:
 
 ```bash
-cd ~/code/max-cli
-python3 -m pip install -e .
+uv tool install --force "git+https://github.com/dapi/maxcli.git"
 ```
+
+Use `pipx install --force "git+https://github.com/dapi/maxcli.git"` when `uv`
+is unavailable.
 
 Authenticate once:
 
@@ -44,7 +46,8 @@ are stored outside the repo in `~/.config/maxcli/config.json`.
   APIs and can be brittle under concurrent sessions.
 - Prefer `--json` for agent workflows.
 - Never print, paste, commit, or expose tokens from `~/.config/maxcli/config.json`.
-- If `maxcli` is not found, run `cd ~/code/max-cli && python3 -m pip install -e .`.
+- If `maxcli` is not found, install it from GitHub with `uv tool install` or
+  `pipx install` as shown above.
 - If authentication is missing, ask the user to run `maxcli auth <phone>` locally
   when a 2FA password is required.
 - If command shape is uncertain, verify it with `maxcli <command> --help`.
