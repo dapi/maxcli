@@ -460,7 +460,7 @@ def create_pymax_client(args: argparse.Namespace) -> Any:
         phone=phone,
         token=require_token(args),
         work_dir=str(session_dir),
-        headers=UserAgentPayload(device_type="DESKTOP", app_version="25.12.14"),
+        headers=UserAgentPayload(device_type="DESKTOP", app_version="26.25.0"),
         logger=quiet_pymax_logger(),
         reconnect=False,
     )
@@ -538,7 +538,7 @@ async def pymax_auth_token(phone: str) -> str:
     client = SocketMaxClient(
         phone=phone,
         work_dir=str(session_dir),
-        headers=UserAgentPayload(device_type="DESKTOP", app_version="25.12.14"),
+        headers=UserAgentPayload(device_type="DESKTOP", app_version="26.25.0"),
         logger=quiet_pymax_logger(),
         reconnect=False,
     )
