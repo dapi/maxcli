@@ -19,6 +19,9 @@ from typing import Any
 
 from . import __version__
 
+MAX_APP_VERSION = "26.37.1"
+MAX_BUILD_NUMBER = 6900
+
 
 APP_NAME = "maxcli"
 DEFAULT_PROFILE = "default"
@@ -460,7 +463,7 @@ def create_pymax_client(args: argparse.Namespace) -> Any:
         phone=phone,
         token=require_token(args),
         work_dir=str(session_dir),
-        headers=UserAgentPayload(device_type="DESKTOP", app_version="26.25.0"),
+        headers=UserAgentPayload(device_type="DESKTOP", app_version=MAX_APP_VERSION, build_number=MAX_BUILD_NUMBER),
         logger=quiet_pymax_logger(),
         reconnect=False,
     )
@@ -538,7 +541,7 @@ async def pymax_auth_token(phone: str) -> str:
     client = SocketMaxClient(
         phone=phone,
         work_dir=str(session_dir),
-        headers=UserAgentPayload(device_type="DESKTOP", app_version="26.25.0"),
+        headers=UserAgentPayload(device_type="DESKTOP", app_version=MAX_APP_VERSION, build_number=MAX_BUILD_NUMBER),
         logger=quiet_pymax_logger(),
         reconnect=False,
     )

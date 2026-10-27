@@ -9,10 +9,10 @@ It is based on [`maxlib`](https://pypi.org/project/maxlib/), which talks to MAX 
 Install or update the latest release with `uv`:
 
 ```bash
-uv tool install --force "git+https://github.com/dapi/maxcli.git@v0.3.0"
+uv tool install --force "git+https://github.com/dapi/maxcli.git@v0.3.2"
 ```
 
-Use `pipx install --force "git+https://github.com/dapi/maxcli.git@v0.3.0"`
+Use `pipx install --force "git+https://github.com/dapi/maxcli.git@v0.3.2"`
 when `uv` is unavailable.
 
 Verify the installed version:
