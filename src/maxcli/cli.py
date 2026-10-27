@@ -56,6 +56,7 @@ def load_pymax() -> tuple[Any, Any]:
     try:
         from pymax import SocketMaxClient
         from pymax.payloads import UserAgentPayload
+        from pymax.types import AudioAttach
     except ImportError as exc:
         die(
             "Python package `maxapi-python` is not installed. "
@@ -63,6 +64,16 @@ def load_pymax() -> tuple[Any, Any]:
             2,
         )
         raise exc
+    if not getattr(AudioAttach, "_maxcli_optional_transcription_patch", False):
+        original_from_dict = AudioAttach.from_dict.__func__
+
+        def audio_from_dict(cls: Any, data: dict[str, Any]) -> Any:
+            if "transcriptionStatus" not in data:
+                data = {**data, "transcriptionStatus": ""}
+            return original_from_dict(cls, data)
+
+        AudioAttach.from_dict = classmethod(audio_from_dict)
+        AudioAttach._maxcli_optional_transcription_patch = True
     return SocketMaxClient, UserAgentPayload
 
 
